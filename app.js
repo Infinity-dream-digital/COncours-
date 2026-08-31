@@ -88,6 +88,27 @@ function renderCandidates() {
   });
 }
 
+// Fonction pour enregistrer et afficher directement un nouveau candidat
+async function createCandidate(newCandidateData) {
+  try {
+    const docRef = await addDoc(collection(db, 'candidates'), newCandidateData);
+    
+    // 1. On pousse le nouveau candidat dans notre tableau JS
+    candidates.push({
+      id: docRef.id,
+      votesCount: 0,
+      ...newCandidateData
+    });
+
+    // 2. On réexécute renderCandidates() pour rafraîchir le HTML
+    renderCandidates();
+    
+    showToast('Candidat ajouté avec succès !');
+  } catch (err) {
+    console.error("Erreur lors de l'ajout :", err);
+  }
+}
+
 function openProject(candidate) {
   selectedCandidate = candidate;
   $('#projectTitle').textContent = candidate.name;
