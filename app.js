@@ -1,9 +1,25 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+import { 
+  getFirestore, 
+  collection, 
+  getDocs, 
+  addDoc, 
+  query, 
+  where, 
+  orderBy 
+} from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
-const SUPABASE_URL = 'https://zwybiqrmqkiarbelgmzy.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3eWJpcXJtcWtpYXJiZWxnbXp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxMzU0MzEsImV4cCI6MjEwMzcxMTQzMX0.k25NLgEtYQt-lgzNHwFC2dBc6Ey2c-8VTPzQQe2c6rc';
+const firebaseConfig = {
+  apiKey: "AIzaSyAjbVjLLEWQyJFkXG-g67q3zQfee69Wo-I",
+  authDomain: "concours-13ebb.firebaseapp.com",
+  projectId: "concours-13ebb",
+  storageBucket: "concours-13ebb.firebasestorage.app",
+  messagingSenderId: "34631527839",
+  appId: "1:34631527839:web:14580c393acd7736efe1aa"
+};
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 const seedCandidates = [
   { name:'Amina Koné', initials:'AK', short_description:'Une solution simple pour rendre le soutien scolaire accessible à chaque enfant.', full_project:'Amina développe une plateforme mobile de tutorat communautaire qui connecte des étudiants volontaires avec des enfants ayant besoin de se faire accompagner. Son projet combine contenus courts, suivi personnalisé et entraide locale.', photo_url:'' },
@@ -22,34 +38,35 @@ const showToast = (message) => { const toast = $('#toast'); toast.textContent = 
 const normalized = (value) => value.trim().toLowerCase();
 
 async function loadData() {
-  // Load candidates
-  const { data: candData, error: candError } = await supabase
-    .from('candidates')
-    .select('*')
-    .order('created_at', { ascending: true });
-
-  if (candData && candData.length > 0) {
-    candidates = candData;
-  } else if (!candError) {
-    // Seed initial candidates
-    for (const c of seedCandidates) {
-      const { data: inserted } = await supabase.from('candidates').insert(c).select();
-      if (inserted) candidates.push(...inserted);
+  try {
+    // 1. Charger les candidats depuis Firestore
+    const candidatesCol = collection(db, 'candidates');
+    const candSnapshot = await getDocs(query(candidatesCol, orderBy('name', 'asc')));
+    
+    if (!candSnapshot.empty) {
+      candidates = candSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } else {
+      // Si la collection est vide, injecter les graines (seedCandidates)
+      for (const c of seedCandidates) {
+        const docRef = await addDoc(candidatesCol, c);
+        candidates.push({ id: docRef.id, ...c });
+      }
     }
-  } else {
-    candidates = seedCandidates.map(c => ({ id: c.name.toLowerCase().replace(/\s+/g, '-'), ...c }));
+
+    // 2. Charger les votes depuis Firestore
+    const votesCol = collection(db, 'votes');
+    const voteSnapshot = await getDocs(votesCol);
+    votes = voteSnapshot.docs.map(doc => doc.data());
+
+    // 3. Compter les votes par candidat
+    candidates.forEach(c => {
+      c.votesCount = votes.filter(v => v.candidate_id === c.id).length;
+    });
+
+    renderCandidates();
+  } catch (error) {
+    console.error("Erreur de chargement Firebase:", error);
   }
-
-  // Load votes
-  const { data: voteData } = await supabase.from('votes').select('*');
-  votes = voteData || [];
-
-  // Count votes per candidate
-  candidates.forEach(c => {
-    c.votesCount = votes.filter(v => v.candidate_id === c.id).length;
-  });
-
-  renderCandidates();
 }
 
 function renderCandidates() {
@@ -94,40 +111,44 @@ async function submitVote(event) {
   const email = normalized($('#voterEmail').value);
   const error = $('#voteError');
   error.textContent = '';
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { error.textContent = 'Veuillez entrer une adresse e-mail valide.'; return; }
 
-  // Check if already voted
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { 
+    error.textContent = 'Veuillez entrer une adresse e-mail valide.'; 
+    return; 
+  }
+
+  // Vérification locale rapide
   if (votes.some((vote) => normalized(vote.voter_email) === email)) {
     error.textContent = 'Cette adresse a déjà participé au vote.';
     return;
   }
 
   try {
-    const { data: existing } = await supabase
-      .from('votes')
-      .select('id')
-      .eq('voter_email', email)
-      .limit(1);
+    const votesCol = collection(db, 'votes');
+    
+    // Vérification de doublons directement dans Firestore
+    const existingQuery = query(votesCol, where('voter_email', '==', email));
+    const existingDocs = await getDocs(existingQuery);
 
-    if (existing && existing.length > 0) {
+    if (!existingDocs.empty) {
       error.textContent = 'Cette adresse a déjà participé au vote.';
       votes.push({ voter_email: email, candidate_id: selectedCandidate.id });
       return;
     }
 
-    const { error: insertError } = await supabase
-      .from('votes')
-      .insert({ voter_email: email, candidate_id: selectedCandidate.id });
+    // Enregistrement du vote dans Firestore
+    const newVote = { voter_email: email, candidate_id: selectedCandidate.id };
+    await addDoc(votesCol, newVote);
 
-    if (insertError) throw insertError;
-
-    votes.push({ voter_email: email, candidate_id: selectedCandidate.id });
+    votes.push(newVote);
     const localCandidate = candidates.find((c) => c.id === selectedCandidate.id);
     if (localCandidate) localCandidate.votesCount = (localCandidate.votesCount || 0) + 1;
+    
     closeModal('voteModal');
     renderCandidates();
     showToast('Votre vote a bien été enregistré. Merci !');
   } catch (submitError) {
+    console.error(submitError);
     error.textContent = 'Impossible d enregistrer le vote. Réessayez.';
   }
 }
