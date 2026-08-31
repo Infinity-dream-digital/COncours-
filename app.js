@@ -6,8 +6,8 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const seedCandidates = [
-  { name:'Amina Koné', initials:'AK', short_description:'Une solution simple pour rendre le soutien scolaire accessible à chaque enfant.', full_project:'Amina développe une plateforme mobile de tutorat communautaire qui connecte des étudiants volontaires avec des enfants ayant besoin d'accompagnement. Son projet combine contenus courts, suivi personnalisé et entraide locale.', photo_url:'' },
-  { name:'Koffi N'Guessan', initials:'KN', short_description:'Transformer les déchets plastiques en objets utiles, beaux et durables.', full_project:'Koffi transforme les déchets plastiques collectés dans les quartiers en mobilier et objets du quotidien. Avec son atelier-école, il veut créer des emplois verts tout en sensibilisant les jeunes à l'économie circulaire.', photo_url:'' },
+  { name:'Amina Koné', initials:'AK', short_description:'Une solution simple pour rendre le soutien scolaire accessible à chaque enfant.', full_project:'Amina développe une plateforme mobile de tutorat communautaire qui connecte des étudiants volontaires avec des enfants ayant besoin de se faire accompagner. Son projet combine contenus courts, suivi personnalisé et entraide locale.', photo_url:'' },
+  { name:'Koffi NGuessan', initials:'KN', short_description:'Transformer les déchets plastiques en objets utiles, beaux et durables.', full_project:'Koffi transforme les déchets plastiques collectés dans les quartiers en mobilier et objets du quotidien. Avec son atelier-école, il veut créer des emplois verts tout en sensibilisant les jeunes à l économie circulaire.', photo_url:'' },
   { name:'Mariam Traoré', initials:'MT', short_description:'Donner une voix aux jeunes talents créatifs de nos quartiers.', full_project:'Mariam crée une scène itinérante qui repère, accompagne et met en lumière les jeunes talents artistiques. Son projet propose des ateliers, des résidences et des showcases gratuits dans plusieurs communes.', photo_url:'' }
 ];
 
@@ -128,7 +128,7 @@ async function submitVote(event) {
     renderCandidates();
     showToast('Votre vote a bien été enregistré. Merci !');
   } catch (submitError) {
-    error.textContent = 'Impossible d'enregistrer le vote. Réessayez.';
+    error.textContent = 'Impossible d enregistrer le vote. Réessayez.';
   }
 }
 

@@ -133,7 +133,7 @@
         document.body.classList.add('dash-body');
         loadData();
       } else {
-        $('loginError').textContent = 'Code d'accès incorrect.';
+        $('loginError').textContent = 'Code d accès incorrect.';
         $('adminCode').value = '';
       }
     };
@@ -252,7 +252,7 @@
         name, initials, short_description: short, full_project: full, photo_url: newPhotoUrl || ''
       }).select();
       if (error) {
-        $('addError').textContent = 'Erreur lors de l'enregistrement. Réessayez.';
+        $('addError').textContent = 'Erreur lors de l enregistrement. Réessayez.';
         return;
       }
       if (data && data[0]) {
