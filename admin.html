@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Administration — SMALL BOOST</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="admin-body" id="adminBody">
+  <!-- LOGIN VIEW -->
+  <div class="admin-card" id="loginView">
+    <a class="brand" href="index.html"><span>SMALL</span><strong>BOOST</strong></a>
+    <h1>Espace admin</h1>
+    <p>Entrez le code d'accès pour gérer les candidats et voir les votes.</p>
+    <form onsubmit="checkCode(event)">
+      <div class="form-group">
+        <label for="adminCode">Code d'accès</label>
+        <input type="password" id="adminCode" required placeholder="••••••••••" autocomplete="off" autofocus />
+      </div>
+      <div class="form-error" id="loginError"></div>
+      <button type="submit" class="button button-orange">Entrer →</button>
+    </form>
+    <a href="index.html" class="admin-back">← Retour au site</a>
+  </div>
+
+  <!-- DASHBOARD VIEW -->
+  <div class="dash-body" id="dashView" style="display:none">
+    <header class="dash-header">
+      <div class="dash-header-inner">
+        <a class="brand" href="index.html"><span>SMALL</span><strong>BOOST</strong></a>
+        <button class="dash-logout" onclick="logout()">Déconnexion</button>
+      </div>
+    </header>
+    <main class="dash-main">
+      <h1 class="dash-title">Tableau de bord</h1>
+
+      <div class="dash-stats">
+        <div class="dash-stat"><strong id="totalVotes">0</strong><span>Votes reçus</span></div>
+        <div class="dash-stat"><strong id="totalCandidates">0</strong><span>Finalistes</span></div>
+        <div class="dash-stat"><strong id="lastVote">—</strong><span>Dernier vote</span></div>
+      </div>
+
+      <!-- CLASSEMENT -->
+      <div class="dash-section">
+        <div class="dash-section-head">
+          <h3>Classement</h3>
+          <button class="dash-export" onclick="exportCsv()">Exporter CSV ↓</button>
+        </div>
+        <div class="ranking-list" id="rankingList"></div>
+      </div>
+
+      <!-- VOTES RÉCENTS -->
+      <div class="dash-section">
+        <div class="dash-section-head">
+          <h3>Votes récents</h3>
+        </div>
+        <div class="dash-filters">
+          <input type="text" id="searchVotes" placeholder="Rechercher par e-mail..." oninput="renderVotesTable()" />
+        </div>
+        <div class="votes-table-wrap">
+          <table class="dash-table">
+            <thead><tr><th>E-mail</th><th>Projet</th><th>Date</th></tr></thead>
+            <tbody id="votesTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- GÉRER LES CANDIDATS -->
+      <div class="dash-section">
+        <div class="dash-section-head">
+          <h3>Gérer les candidats</h3>
+          <button class="button button-orange" onclick="toggleAddForm()" id="toggleAddBtn">Ajouter un candidat +</button>
+        </div>
+
+        <!-- ADD FORM -->
+        <div class="add-candidate-form" id="addForm">
+          <div class="form-group">
+            <label>Nom complet *</label>
+            <input type="text" id="newName" placeholder="Ex: Amina Koné" />
+          </div>
+          <div class="form-group">
+            <label>Résumé du projet *</label>
+            <input type="text" id="newShort" placeholder="Une phrase pour le présenter" />
+          </div>
+          <div class="form-group">
+            <label>Description détaillée *</label>
+            <textarea id="newFull" placeholder="Description détaillée du projet"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Photo du candidat</label>
+            <input type="file" id="newPhoto" accept="image/*" onchange="previewPhoto()" />
+            <img id="photoPreview" class="photo-preview" style="display:none" />
+          </div>
+          <div class="form-error" id="addError"></div>
+          <button class="button button-orange" onclick="addCandidate()">Enregistrer le candidat →</button>
+        </div>
+
+        <!-- CANDIDATES LIST -->
+        <div id="candidatesAdminList" style="margin-top:24px"></div>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    const SUPABASE_URL = 'https://zwybiqrmqkiarbelgmzy.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3eWJpcXJtcWtpYXJiZWxnbXp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxMzU0MzEsImV4cCI6MjEwMzcxMTQzMX0.k25NLgEtYQt-lgzNHwFC2dBc6Ey2c-8VTPzQQe2c6rc';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const ADMIN_CODE = 'Digitaldream';
+    let candidates = [];
+    let votes = [];
+    let newPhotoUrl = '';
+
+    const $ = (id) => document.getElementById(id);
+    const showToast = (msg) => { const t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3500); };
+
+    // --- LOGIN ---
+    window.checkCode = (e) => {
+      e.preventDefault();
+      const code = $('adminCode').value.trim();
+      if (code === ADMIN_CODE) {
+        sessionStorage.setItem('sb_admin', 'true');
+        $('loginView').style.display = 'none';
+        $('dashView').style.display = 'block';
+        document.body.classList.remove('admin-body');
+        document.body.classList.add('dash-body');
+        loadData();
+      } else {
+        $('loginError').textContent = 'Code d'accès incorrect.';
+        $('adminCode').value = '';
+      }
+    };
+
+    window.logout = () => {
+      sessionStorage.removeItem('sb_admin');
+      window.location.href = 'index.html';
+    };
+
+    // Auto-login if session exists
+    if (sessionStorage.getItem('sb_admin') === 'true') {
+      $('loginView').style.display = 'none';
+      $('dashView').style.display = 'block';
+      document.body.classList.remove('admin-body');
+      document.body.classList.add('dash-body');
+      loadData();
+    }
+
+    // --- LOAD DATA ---
+    async function loadData() {
+      const { data: candData } = await supabase.from('candidates').select('*').order('created_at', { ascending: true });
+      const { data: voteData } = await supabase.from('votes').select('*').order('created_at', { ascending: false });
+      candidates = candData || [];
+      votes = voteData || [];
+      candidates.forEach(c => { c.votesCount = votes.filter(v => v.candidate_id === c.id).length; });
+      updateDashboard();
+      renderCandidatesAdmin();
+      renderVotesTable();
+    }
+
+    // --- DASHBOARD ---
+    function updateDashboard() {
+      $('totalVotes').textContent = votes.length;
+      $('totalCandidates').textContent = candidates.length;
+      $('lastVote').textContent = votes.length
+        ? new Date(votes[0].created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
+        : '—';
+
+      const ranked = [...candidates].sort((a, b) => (b.votesCount || 0) - (a.votesCount || 0));
+      const maxVotes = Math.max(...ranked.map(c => c.votesCount || 0), 1);
+      $('rankingList').innerHTML = ranked.map((c, i) =>
+        `<div class="ranking-row"><span class="ranking-position">0${i+1}</span><span class="ranking-name">${c.name}</span><span class="ranking-bar" style="width:${Math.max(8, (c.votesCount||0)/maxVotes*200)}px"></span><span class="ranking-votes">${c.votesCount || 0}</span></div>`
+      ).join('');
+    }
+
+    // --- VOTES TABLE ---
+    window.renderVotesTable = () => {
+      const search = ($('searchVotes')?.value || '').toLowerCase().trim();
+      const filtered = votes.filter(v => !search || (v.voter_email || '').toLowerCase().includes(search));
+      $('votesTable').innerHTML = filtered.slice(0, 50).map(v => {
+        const cand = candidates.find(c => c.id === v.candidate_id);
+        const date = v.created_at ? new Date(v.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+        return `<tr><td>${v.voter_email}</td><td>${cand?.name || '—'}</td><td>${date}</td></tr>`;
+      }).join('') || '<tr><td colspan="3" class="dash-empty">Aucun vote trouvé.</td></tr>';
+    };
+
+    // --- CANDIDATES ADMIN ---
+    function renderCandidatesAdmin() {
+      $('candidatesAdminList').innerHTML = candidates.map(c => {
+        const photo = c.photo_url
+          ? `<img src="${c.photo_url}" class="candidate-admin-photo" alt="${c.name}" />`
+          : `<div class="candidate-admin-photo">${c.initials || c.name.split(' ').map(p => p[0]).join('').slice(0,2)}</div>`;
+        return `<div class="candidate-admin-card">
+          ${photo}
+          <div class="candidate-admin-info">
+            <h4>${c.name}</h4>
+            <p>${c.short_description || ''}</p>
+            <span class="votes-badge">${c.votesCount || 0} votes</span>
+          </div>
+          <div class="candidate-admin-actions">
+            <button class="btn-sm" onclick="editCandidate('${c.id}')">Modifier</button>
+            <button class="btn-sm danger" onclick="deleteCandidate('${c.id}')">Supprimer</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // --- ADD CANDIDATE ---
+    window.toggleAddForm = () => {
+      const form = $('addForm');
+      form.classList.toggle('open');
+      $('toggleAddBtn').textContent = form.classList.contains('open') ? 'Annuler ×' : 'Ajouter un candidat +';
+      if (!form.classList.contains('open')) {
+        $('newName').value = '';
+        $('newShort').value = '';
+        $('newFull').value = '';
+        $('newPhoto').value = '';
+        $('photoPreview').style.display = 'none';
+        newPhotoUrl = '';
+        $('addError').textContent = '';
+      }
+    };
+
+    window.previewPhoto = () => {
+      const file = $('newPhoto').files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        newPhotoUrl = e.target.result;
+        $('photoPreview').src = newPhotoUrl;
+        $('photoPreview').style.display = 'block';
+      };
+      reader.readAsDataURL(file);
+    };
+
+    window.addCandidate = async () => {
+      const name = $('newName').value.trim();
+      const short = $('newShort').value.trim();
+      const full = $('newFull').value.trim();
+      if (!name || !short || !full) {
+        $('addError').textContent = 'Tous les champs marqués * sont obligatoires.';
+        return;
+      }
+      const initials = name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
+      const { data, error } = await supabase.from('candidates').insert({
+        name, initials, short_description: short, full_project: full, photo_url: newPhotoUrl || ''
+      }).select();
+      if (error) {
+        $('addError').textContent = 'Erreur lors de l'enregistrement. Réessayez.';
+        return;
+      }
+      if (data && data[0]) {
+        candidates.push({ ...data[0], votesCount: 0 });
+      }
+      $('newName').value = '';
+      $('newShort').value = '';
+      $('newFull').value = '';
+      $('newPhoto').value = '';
+      $('photoPreview').style.display = 'none';
+      newPhotoUrl = '';
+      $('addError').textContent = '';
+      $('addForm').classList.remove('open');
+      $('toggleAddBtn').textContent = 'Ajouter un candidat +';
+      updateDashboard();
+      renderCandidatesAdmin();
+      showToast('Candidat ajouté avec succès.');
+    };
+
+    // --- DELETE CANDIDATE ---
+    window.deleteCandidate = async (id) => {
+      const cand = candidates.find(c => c.id === id);
+      if (!cand) return;
+      if (!confirm(`Supprimer « ${cand.name} » et tous ses votes ? Cette action est irréversible.`)) return;
+      const { error } = await supabase.from('candidates').delete().eq('id', id);
+      if (error) { showToast('Erreur lors de la suppression.'); return; }
+      candidates = candidates.filter(c => c.id !== id);
+      votes = votes.filter(v => v.candidate_id !== id);
+      updateDashboard();
+      renderCandidatesAdmin();
+      renderVotesTable();
+      showToast('Candidat supprimé.');
+    };
+
+    // --- EDIT CANDIDATE ---
+    window.editCandidate = (id) => {
+      const cand = candidates.find(c => c.id === id);
+      if (!cand) return;
+      const name = prompt('Nom:', cand.name);
+      if (name === null) return;
+      const short = prompt('Résumé:', cand.short_description || '');
+      if (short === null) return;
+      const full = prompt('Description détaillée:', cand.full_project || '');
+      if (full === null) return;
+      const initials = name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
+      supabase.from('candidates').update({
+        name, initials, short_description: short, full_project: full
+      }).eq('id', id).then(() => {
+        cand.name = name;
+        cand.initials = initials;
+        cand.short_description = short;
+        cand.full_project = full;
+        updateDashboard();
+        renderCandidatesAdmin();
+        showToast('Candidat modifié.');
+      });
+    };
+
+    // --- EXPORT CSV ---
+    window.exportCsv = () => {
+      const rows = [['Email', 'Candidat', 'Date']];
+      votes.forEach(v => {
+        const cand = candidates.find(c => c.id === v.candidate_id);
+        rows.push([
+          v.voter_email,
+          cand?.name || '',
+          v.created_at ? new Date(v.created_at).toISOString() : ''
+        ]);
+      });
+      const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'small-boost-votes.csv';
+      link.click();
+      URL.revokeObjectURL(link.href);
+    };
+  </script>
+</body>
+</html>
