@@ -34,31 +34,32 @@ let selectedCandidate = null;
 const $ = (selector) => document.querySelector(selector);
 const openModal = (id) => $(id).classList.add('open');
 const closeModal = (id) => $(id).classList.remove('open');
-const showToast = (message) => { const toast = $('#toast'); toast.textContent = message; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3500); };
+const showToast = (message) => { 
+  const toast = $('#toast'); 
+  toast.textContent = message; 
+  toast.classList.add('show'); 
+  setTimeout(() => toast.classList.remove('show'), 3500); 
+};
 const normalized = (value) => value.trim().toLowerCase();
 
 async function loadData() {
   try {
-    // 1. Charger les candidats depuis Firestore
     const candidatesCol = collection(db, 'candidates');
     const candSnapshot = await getDocs(query(candidatesCol, orderBy('name', 'asc')));
     
     if (!candSnapshot.empty) {
       candidates = candSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     } else {
-      // Si la collection est vide, injecter les graines (seedCandidates)
       for (const c of seedCandidates) {
         const docRef = await addDoc(candidatesCol, c);
         candidates.push({ id: docRef.id, ...c });
       }
     }
 
-    // 2. Charger les votes depuis Firestore
     const votesCol = collection(db, 'votes');
     const voteSnapshot = await getDocs(votesCol);
     votes = voteSnapshot.docs.map(doc => doc.data());
 
-    // 3. Compter les votes par candidat
     candidates.forEach(c => {
       c.votesCount = votes.filter(v => v.candidate_id === c.id).length;
     });
@@ -74,39 +75,37 @@ function renderCandidates() {
     const visual = candidate.photo_url
       ? `<img src="${candidate.photo_url}" alt="${candidate.name}" />`
       : `<div class="portrait">${candidate.initials || candidate.name.split(' ').map(p => p[0]).join('').slice(0,2)}</div>`;
-    return `<article class="candidate-card" data-id="${candidate.id}"><div class="candidate-visual">${visual}</div><div class="card-info"><span class="rank">FINALISTE 0${index + 1}</span><h3>${candidate.name}</h3><p>${candidate.short_description || ''}</p><div class="card-bottom"><button class="card-vote" data-id="${candidate.id}">Voter pour ce projet →</button><span class="vote-count">${candidate.votesCount || 0} votes</span></div></div></article>`;
+    return `
+      <article class="candidate-card" data-id="${candidate.id}">
+        <div class="candidate-visual">${visual}</div>
+        <div class="card-info">
+          <span class="rank">FINALISTE 0${index + 1}</span>
+          <h3>${candidate.name}</h3>
+          <p>${candidate.short_description || ''}</p>
+          <div class="card-bottom">
+            <button class="card-vote" data-id="${candidate.id}">Voter pour ce projet →</button>
+            <span class="vote-count">${candidate.votesCount || 0} votes</span>
+          </div>
+        </div>
+      </article>`;
   }).join('');
 
   document.querySelectorAll('.candidate-card').forEach((card) => {
     card.addEventListener('click', (event) => {
-      const id = event.target.dataset.id || card.dataset.id;
+      const id = card.dataset.id;
       const candidate = candidates.find((item) => item.id === id);
       if (!candidate) return;
-      if (event.target.classList.contains('card-vote')) return openVote(candidate);
-      openProject(candidate);
+
+      // Correction : intercepter le clic exact sur le bouton ou ses enfants
+      const voteButton = event.target.closest('.card-vote');
+      if (voteButton) {
+        event.stopPropagation();
+        openVote(candidate);
+      } else {
+        openProject(candidate);
+      }
     });
   });
-}
-
-// Fonction pour enregistrer et afficher directement un nouveau candidat
-async function createCandidate(newCandidateData) {
-  try {
-    const docRef = await addDoc(collection(db, 'candidates'), newCandidateData);
-    
-    // 1. On pousse le nouveau candidat dans notre tableau JS
-    candidates.push({
-      id: docRef.id,
-      votesCount: 0,
-      ...newCandidateData
-    });
-
-    // 2. On réexécute renderCandidates() pour rafraîchir le HTML
-    renderCandidates();
-    
-    showToast('Candidat ajouté avec succès !');
-  } catch (err) {
-    console.error("Erreur lors de l'ajout :", err);
-  }
 }
 
 function openProject(candidate) {
@@ -138,7 +137,6 @@ async function submitVote(event) {
     return; 
   }
 
-  // Vérification locale rapide
   if (votes.some((vote) => normalized(vote.voter_email) === email)) {
     error.textContent = 'Cette adresse a déjà participé au vote.';
     return;
@@ -146,8 +144,6 @@ async function submitVote(event) {
 
   try {
     const votesCol = collection(db, 'votes');
-    
-    // Vérification de doublons directement dans Firestore
     const existingQuery = query(votesCol, where('voter_email', '==', email));
     const existingDocs = await getDocs(existingQuery);
 
@@ -157,7 +153,6 @@ async function submitVote(event) {
       return;
     }
 
-    // Enregistrement du vote dans Firestore
     const newVote = { voter_email: email, candidate_id: selectedCandidate.id };
     await addDoc(votesCol, newVote);
 
@@ -174,8 +169,16 @@ async function submitVote(event) {
   }
 }
 
-document.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => closeModal(button.dataset.close)));
-document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.addEventListener('click', (event) => { if (event.target === backdrop) backdrop.classList.remove('open'); }));
+document.querySelectorAll('[data-close]').forEach((button) => {
+  button.addEventListener('click', () => closeModal(button.dataset.close));
+});
+
+document.querySelectorAll('.modal-backdrop').forEach((backdrop) => {
+  backdrop.addEventListener('click', (event) => { 
+    if (event.target === backdrop) backdrop.classList.remove('open'); 
+  });
+});
+
 $('#voteForm').addEventListener('submit', submitVote);
 
 loadData();
