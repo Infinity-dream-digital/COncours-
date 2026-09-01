@@ -21,41 +21,74 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// 1. Charger la liste des candidats dans le <select id="candidateSelect">
+// 1. Charger dynamiquement les candidats dans la liste déroulante
 async function loadCandidatesSelect() {
   const selectEl = document.getElementById('candidateSelect');
   if (!selectEl) return;
 
-  const snapshot = await getDocs(collection(db, 'candidates'));
-  snapshot.forEach(docSnap => {
-    const data = docSnap.data();
-    const option = document.createElement('option');
-    option.value = docSnap.id; // Stocke l'ID du candidat
-    option.textContent = data.name;
-    selectEl.appendChild(option);
-  });
+  try {
+    const snapshot = await getDocs(collection(db, 'candidates'));
+    // Vider le select en gardant l'option par défaut
+    selectEl.innerHTML = '<option value="">-- Sélectionnez un candidat --</option>';
+    
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      const option = document.createElement('option');
+      option.value = docSnap.id;
+      option.textContent = data.name;
+      selectEl.appendChild(option);
+    });
+  } catch (err) {
+    console.error("Erreur lors du chargement des candidats :", err);
+  }
 }
 
-// 2. Traiter la soumission du vote
-async function submitVote(voterEmail, selectedCandidateId) {
-  // Optionnel : vérifier si l'email a déjà voté
-  const existingVotes = await getDocs(
-    query(collection(db, 'votes'), where('voter_email', '==', voterEmail))
-  );
+// 2. Écouter la soumission du formulaire
+const voteForm = document.getElementById('voteForm') || document.querySelector('form');
 
-  if (!existingVotes.empty) {
-    alert('Cet e-mail a déjà été utilisé pour voter !');
-    return;
-  }
+if (voteForm) {
+  voteForm.addEventListener('submit', async (e) => {
+    e.preventDefault(); // Indispensable : bloque le rechargement de la page
 
-  // Enregistrement du vote dans la collection 'votes'
-  await addDoc(collection(db, 'votes'), {
-    candidate_id: selectedCandidateId,
-    voter_email: voterEmail,
-    created_at: serverTimestamp()
+    const selectedCandidateId = document.getElementById('candidateSelect')?.value;
+    const voterEmail = document.getElementById('voterEmail')?.value?.trim();
+
+    if (!selectedCandidateId) {
+      alert('Veuillez choisir un candidat.');
+      return;
+    }
+
+    if (!voterEmail) {
+      alert('Veuillez entrer une adresse e-mail valide.');
+      return;
+    }
+
+    try {
+      // Vérification des doublons de vote par e-mail
+      const existingVotes = await getDocs(
+        query(collection(db, 'votes'), where('voter_email', '==', voterEmail))
+      );
+
+      if (!existingVotes.empty) {
+        alert('Cet e-mail a déjà été utilisé pour voter !');
+        return;
+      }
+
+      // Enregistrement dans la collection 'votes'
+      await addDoc(collection(db, 'votes'), {
+        candidate_id: selectedCandidateId,
+        voter_email: voterEmail,
+        created_at: serverTimestamp()
+      });
+
+      alert('Votre vote a bien été pris en compte !');
+      voteForm.reset();
+
+    } catch (err) {
+      console.error("Erreur d'enregistrement du vote :", err);
+      alert("Erreur lors de l'enregistrement du vote : " + err.message);
+    }
   });
-
-  alert('Votre vote a bien été pris en compte !');
 }
 
 loadCandidatesSelect();
