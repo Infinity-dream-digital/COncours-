@@ -75,6 +75,7 @@ function renderCandidates() {
     const visual = candidate.photo_url
       ? `<img src="${candidate.photo_url}" alt="${candidate.name}" />`
       : `<div class="portrait">${candidate.initials || candidate.name.split(' ').map(p => p[0]).join('').slice(0,2)}</div>`;
+    
     return `
       <article class="candidate-card" data-id="${candidate.id}">
         <div class="candidate-visual">${visual}</div>
@@ -83,29 +84,12 @@ function renderCandidates() {
           <h3>${candidate.name}</h3>
           <p>${candidate.short_description || ''}</p>
           <div class="card-bottom">
-            <button class="card-vote" data-id="${candidate.id}">Voter pour ce projet →</button>
+            <a href="vote.html?id=${candidate.id}" class="card-vote">Voter pour ce projet →</a>
             <span class="vote-count">${candidate.votesCount || 0} votes</span>
           </div>
         </div>
       </article>`;
   }).join('');
-
-  document.querySelectorAll('.candidate-card').forEach((card) => {
-    card.addEventListener('click', (event) => {
-      const id = card.dataset.id;
-      const candidate = candidates.find((item) => item.id === id);
-      if (!candidate) return;
-
-      // Correction : intercepter le clic exact sur le bouton ou ses enfants
-      const voteButton = event.target.closest('.card-vote');
-      if (voteButton) {
-        event.stopPropagation();
-        openVote(candidate);
-      } else {
-        openProject(candidate);
-      }
-    });
-  });
 }
 
 function openProject(candidate) {

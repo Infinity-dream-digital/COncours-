@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voter — Small Boost 2026</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .vote-container { max-width: 600px; margin: 60px auto; padding: 20px; }
+    .form-group { margin-bottom: 20px; display: flex; flex-direction: column; gap: 8px; }
+    .form-group input, .form-group select { padding: 12px; font-size: 1rem; border-radius: 8px; border: 1px solid #ccc; }
+    .error-msg { color: red; font-size: 0.9rem; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="vote-container">
+    <h2>Votez pour votre candidat préféré</h2>
+    <p>Une seule participation autorisée par adresse e-mail.</p>
+    
+    <form id="publicVoteForm">
+      <div class="form-group">
+        <label for="voterEmail">Votre adresse e-mail :</label>
+        <input type="email" id="voterEmail" placeholder="ex: nom@domaine.com" required />
+      </div>
+
+      <div class="form-group">
+        <label for="candidateSelect">Choisissez votre candidat :</label>
+        <select id="candidateSelect" required>
+          <option value="">-- Sélectionnez un candidat --</option>
+        </select>
+      </div>
+
+      <div id="voteError" class="error-msg"></div>
+      
+      <button type="submit" class="button button-orange" style="width:100%; margin-top:15px;">Valider mon vote</button>
+    </form>
+    
+    <p style="margin-top:20px;"><a href="index.html">← Retour à l'accueil</a></p>
+  </div>
+
+  <script type="module" src="vote.js"></script>
+</body>
+</html>

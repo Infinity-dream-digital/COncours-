@@ -107,11 +107,30 @@
   <div class="toast" id="toast"></div>
 
   <script type="module">
-    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+    import { 
+      getFirestore, 
+      collection, 
+      getDocs, 
+      addDoc, 
+      updateDoc, 
+      deleteDoc, 
+      doc, 
+      query, 
+      orderBy 
+    } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
-    const SUPABASE_URL = 'https://zwybiqrmqkiarbelgmzy.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3eWJpcXJtcWtpYXJiZWxnbXp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxMzU0MzEsImV4cCI6MjEwMzcxMTQzMX0.k25NLgEtYQt-lgzNHwFC2dBc6Ey2c-8VTPzQQe2c6rc';
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const firebaseConfig = {
+      apiKey: "AIzaSyAjbVjLLEWQyJFkXG-g67q3zQfee69Wo-I",
+      authDomain: "concours-13ebb.firebaseapp.com",
+      projectId: "concours-13ebb",
+      storageBucket: "concours-13ebb.firebasestorage.app",
+      messagingSenderId: "34631527839",
+      appId: "1:34631527839:web:14580c393acd7736efe1aa"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
 
     const ADMIN_CODE = 'Digitaldream';
     let candidates = [];
@@ -154,23 +173,40 @@
 
     // --- LOAD DATA ---
     async function loadData() {
-      const { data: candData } = await supabase.from('candidates').select('*').order('created_at', { ascending: true });
-      const { data: voteData } = await supabase.from('votes').select('*').order('created_at', { ascending: false });
-      candidates = candData || [];
-      votes = voteData || [];
-      candidates.forEach(c => { c.votesCount = votes.filter(v => v.candidate_id === c.id).length; });
-      updateDashboard();
-      renderCandidatesAdmin();
-      renderVotesTable();
+      try {
+        const candSnapshot = await getDocs(query(collection(db, 'candidates'), orderBy('name', 'asc')));
+        candidates = candSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        const voteSnapshot = await getDocs(collection(db, 'votes'));
+        votes = voteSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // Tri des votes du plus récent au plus ancien
+        votes.sort((a, b) => {
+          const dateA = a.created_at?.toDate ? a.created_at.toDate() : new Date(a.created_at || 0);
+          const dateB = b.created_at?.toDate ? b.created_at.toDate() : new Date(b.created_at || 0);
+          return dateB - dateA;
+        });
+
+        candidates.forEach(c => { c.votesCount = votes.filter(v => v.candidate_id === c.id).length; });
+        updateDashboard();
+        renderCandidatesAdmin();
+        renderVotesTable();
+      } catch (err) {
+        console.error("Erreur de chargement Firebase:", err);
+      }
     }
 
     // --- DASHBOARD ---
     function updateDashboard() {
       $('totalVotes').textContent = votes.length;
       $('totalCandidates').textContent = candidates.length;
-      $('lastVote').textContent = votes.length
-        ? new Date(votes[0].created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
-        : '—';
+      
+      let lastDate = '—';
+      if (votes.length && votes[0].created_at) {
+        const d = votes[0].created_at.toDate ? votes[0].created_at.toDate() : new Date(votes[0].created_at);
+        lastDate = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+      }
+      $('lastVote').textContent = lastDate;
 
       const ranked = [...candidates].sort((a, b) => (b.votesCount || 0) - (a.votesCount || 0));
       const maxVotes = Math.max(...ranked.map(c => c.votesCount || 0), 1);
@@ -185,8 +221,12 @@
       const filtered = votes.filter(v => !search || (v.voter_email || '').toLowerCase().includes(search));
       $('votesTable').innerHTML = filtered.slice(0, 50).map(v => {
         const cand = candidates.find(c => c.id === v.candidate_id);
-        const date = v.created_at ? new Date(v.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
-        return `<tr><td>${v.voter_email}</td><td>${cand?.name || '—'}</td><td>${date}</td></tr>`;
+        let date = '—';
+        if (v.created_at) {
+          const d = v.created_at.toDate ? v.created_at.toDate() : new Date(v.created_at);
+          date = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+        return `<tr><td>${v.voter_email || '—'}</td><td>${cand?.name || '—'}</td><td>${date}</td></tr>`;
       }).join('') || '<tr><td colspan="3" class="dash-empty">Aucun vote trouvé.</td></tr>';
     };
 
@@ -248,28 +288,43 @@
         return;
       }
       const initials = name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
-      const { data, error } = await supabase.from('candidates').insert({
-        name, initials, short_description: short, full_project: full, photo_url: newPhotoUrl || ''
-      }).select();
-      if (error) {
+      
+      try {
+        const docRef = await addDoc(collection(db, 'candidates'), {
+          name, 
+          initials, 
+          short_description: short, 
+          full_project: full, 
+          photo_url: newPhotoUrl || '',
+          created_at: new Date()
+        });
+
+        candidates.push({ 
+          id: docRef.id, 
+          name, 
+          initials, 
+          short_description: short, 
+          full_project: full, 
+          photo_url: newPhotoUrl || '', 
+          votesCount: 0 
+        });
+
+        $('newName').value = '';
+        $('newShort').value = '';
+        $('newFull').value = '';
+        $('newPhoto').value = '';
+        $('photoPreview').style.display = 'none';
+        newPhotoUrl = '';
+        $('addError').textContent = '';
+        $('addForm').classList.remove('open');
+        $('toggleAddBtn').textContent = 'Ajouter un candidat +';
+        updateDashboard();
+        renderCandidatesAdmin();
+        showToast('Candidat ajouté avec succès.');
+      } catch (err) {
+        console.error(err);
         $('addError').textContent = 'Erreur lors de l enregistrement. Réessayez.';
-        return;
       }
-      if (data && data[0]) {
-        candidates.push({ ...data[0], votesCount: 0 });
-      }
-      $('newName').value = '';
-      $('newShort').value = '';
-      $('newFull').value = '';
-      $('newPhoto').value = '';
-      $('photoPreview').style.display = 'none';
-      newPhotoUrl = '';
-      $('addError').textContent = '';
-      $('addForm').classList.remove('open');
-      $('toggleAddBtn').textContent = 'Ajouter un candidat +';
-      updateDashboard();
-      renderCandidatesAdmin();
-      showToast('Candidat ajouté avec succès.');
     };
 
     // --- DELETE CANDIDATE ---
@@ -277,18 +332,22 @@
       const cand = candidates.find(c => c.id === id);
       if (!cand) return;
       if (!confirm(`Supprimer « ${cand.name} » et tous ses votes ? Cette action est irréversible.`)) return;
-      const { error } = await supabase.from('candidates').delete().eq('id', id);
-      if (error) { showToast('Erreur lors de la suppression.'); return; }
-      candidates = candidates.filter(c => c.id !== id);
-      votes = votes.filter(v => v.candidate_id !== id);
-      updateDashboard();
-      renderCandidatesAdmin();
-      renderVotesTable();
-      showToast('Candidat supprimé.');
+      
+      try {
+        await deleteDoc(doc(db, 'candidates', id));
+        candidates = candidates.filter(c => c.id !== id);
+        votes = votes.filter(v => v.candidate_id !== id);
+        updateDashboard();
+        renderCandidatesAdmin();
+        renderVotesTable();
+        showToast('Candidat supprimé.');
+      } catch (err) {
+        showToast('Erreur lors de la suppression.');
+      }
     };
 
     // --- EDIT CANDIDATE ---
-    window.editCandidate = (id) => {
+    window.editCandidate = async (id) => {
       const cand = candidates.find(c => c.id === id);
       if (!cand) return;
       const name = prompt('Nom:', cand.name);
@@ -298,9 +357,11 @@
       const full = prompt('Description détaillée:', cand.full_project || '');
       if (full === null) return;
       const initials = name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
-      supabase.from('candidates').update({
-        name, initials, short_description: short, full_project: full
-      }).eq('id', id).then(() => {
+
+      try {
+        await updateDoc(doc(db, 'candidates', id), {
+          name, initials, short_description: short, full_project: full
+        });
         cand.name = name;
         cand.initials = initials;
         cand.short_description = short;
@@ -308,7 +369,9 @@
         updateDashboard();
         renderCandidatesAdmin();
         showToast('Candidat modifié.');
-      });
+      } catch (err) {
+        showToast('Erreur lors de la modification.');
+      }
     };
 
     // --- EXPORT CSV ---
@@ -316,10 +379,15 @@
       const rows = [['Email', 'Candidat', 'Date']];
       votes.forEach(v => {
         const cand = candidates.find(c => c.id === v.candidate_id);
+        let dateStr = '';
+        if (v.created_at) {
+          const d = v.created_at.toDate ? v.created_at.toDate() : new Date(v.created_at);
+          dateStr = d.toISOString();
+        }
         rows.push([
-          v.voter_email,
+          v.voter_email || '',
           cand?.name || '',
-          v.created_at ? new Date(v.created_at).toISOString() : ''
+          dateStr
         ]);
       });
       const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
