@@ -9,6 +9,12 @@ import {
   serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
+import { 
+  getAuth, 
+  RecaptchaVerifier, 
+  signInWithPhoneNumber 
+} from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
+
 const firebaseConfig = {
   apiKey: "AIzaSyAjbVjLLEWQyJFkXG-g67q3zQfee69Wo-I",
   authDomain: "concours-13ebb.firebaseapp.com",
@@ -20,22 +26,30 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
 
-// 1. Charger dynamiquement les candidats dans la liste déroulante
+let confirmationResultGlobal = null;
+
+// Initialisation du reCAPTCHA invisible pour Firebase
+window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+  'size': 'invisible'
+});
+
+// 1. Charger les candidats
 async function loadCandidatesSelect() {
   const selectEl = document.getElementById('candidateSelect');
   if (!selectEl) return;
 
   try {
     const snapshot = await getDocs(collection(db, 'candidates'));
-    // Vider le select en gardant l'option par défaut
     selectEl.innerHTML = '<option value="">-- Sélectionnez un candidat --</option>';
-    
+
     snapshot.forEach(docSnap => {
       const data = docSnap.data();
+      const displayName = data.name || data.nom || "Candidat";
       const option = document.createElement('option');
       option.value = docSnap.id;
-      option.textContent = data.name;
+      option.textContent = displayName;
       selectEl.appendChild(option);
     });
   } catch (err) {
@@ -43,52 +57,86 @@ async function loadCandidatesSelect() {
   }
 }
 
-// 2. Écouter la soumission du formulaire
-const voteForm = document.getElementById('voteForm') || document.querySelector('form');
+// 2. Action du bouton : Envoyer le code SMS
+document.getElementById('sendSmsBtn')?.addEventListener('click', async () => {
+  let phoneNumber = document.getElementById('voterPhone')?.value?.trim();
 
-if (voteForm) {
-  voteForm.addEventListener('submit', async (e) => {
-    e.preventDefault(); // Indispensable : bloque le rechargement de la page
+  if (!phoneNumber) {
+    alert("Veuillez entrer votre numéro de téléphone.");
+    return;
+  }
 
-    const selectedCandidateId = document.getElementById('candidateSelect')?.value;
-    const voterEmail = document.getElementById('voterEmail')?.value?.trim();
+  // Formatage automatique pour la Côte d'Ivoire si l'indicatif +225 n'est pas saisi
+  if (!phoneNumber.startsWith('+')) {
+    phoneNumber = '+225' + phoneNumber;
+  }
 
-    if (!selectedCandidateId) {
-      alert('Veuillez choisir un candidat.');
+  try {
+    // A. Vérifier si ce numéro a DÉJÀ voté
+    const existingVotes = await getDocs(
+      query(collection(db, 'votes'), where('voter_phone', '==', phoneNumber))
+    );
+
+    if (!existingVotes.empty) {
+      alert('Ce numéro de téléphone a déjà été utilisé pour voter !');
       return;
     }
 
-    if (!voterEmail) {
-      alert('Veuillez entrer une adresse e-mail valide.');
-      return;
-    }
+    // B. Envoi du SMS via Firebase
+    const appVerifier = window.recaptchaVerifier;
+    confirmationResultGlobal = await signInWithPhoneNumber(auth, phoneNumber, appVerifier);
 
-    try {
-      // Vérification des doublons de vote par e-mail
-      const existingVotes = await getDocs(
-        query(collection(db, 'votes'), where('voter_email', '==', voterEmail))
-      );
+    alert("Un code à 6 chiffres vient de vous être envoyé par SMS.");
+    document.getElementById('otpSection').style.display = 'block';
+    document.getElementById('sendSmsBtn').style.display = 'none';
 
-      if (!existingVotes.empty) {
-        alert('Cet e-mail a déjà été utilisé pour voter !');
-        return;
-      }
+  } catch (error) {
+    console.error("Erreur SMS :", error);
+    alert("Impossible d'envoyer le SMS : " + error.message);
+  }
+});
 
-      // Enregistrement dans la collection 'votes'
-      await addDoc(collection(db, 'votes'), {
-        candidate_id: selectedCandidateId,
-        voter_email: voterEmail,
-        created_at: serverTimestamp()
-      });
+// 3. Soumission du vote après validation du code SMS
+document.getElementById('voteForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
 
-      alert('Votre vote a bien été pris en compte !');
-      voteForm.reset();
+  const smsCode = document.getElementById('smsCode')?.value?.trim();
+  const selectedCandidateId = document.getElementById('candidateSelect')?.value;
+  let phoneNumber = document.getElementById('voterPhone')?.value?.trim();
 
-    } catch (err) {
-      console.error("Erreur d'enregistrement du vote :", err);
-      alert("Erreur lors de l'enregistrement du vote : " + err.message);
-    }
-  });
-}
+  if (!phoneNumber.startsWith('+')) {
+    phoneNumber = '+225' + phoneNumber;
+  }
+
+  if (!smsCode || smsCode.length < 6) {
+    alert("Veuillez saisir le code à 6 chiffres reçu par SMS.");
+    return;
+  }
+
+  if (!selectedCandidateId) {
+    alert("Veuillez sélectionner un candidat.");
+    return;
+  }
+
+  try {
+    // A. Vérification du code SMS auprès de Firebase
+    const userCredential = await confirmationResultGlobal.confirm(smsCode);
+
+    // B. Enregistrement du vote dans Firestore
+    await addDoc(collection(db, 'votes'), {
+      candidate_id: selectedCandidateId,
+      voter_phone: phoneNumber,
+      voter_uid: userCredential.user.uid,
+      created_at: serverTimestamp()
+    });
+
+    alert('Votre vote a été validé avec succès !');
+    location.reload();
+
+  } catch (error) {
+    console.error("Erreur de validation du vote :", error);
+    alert("Code SMS incorrect ou expiré. Veuillez réessayez.");
+  }
+});
 
 loadCandidatesSelect();

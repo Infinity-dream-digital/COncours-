@@ -18,10 +18,26 @@
     <p>Une seule participation autorisée par adresse e-mail.</p>
     
     <form id="voteForm">
-      <div class="form-group">
-        <label for="voterEmail">Votre adresse e-mail :</label>
-        <input type="email" id="voterEmail" placeholder="ex: nom@domaine.com" required />
-      </div>
+      <!-- Champ Numéro de téléphone -->
+  <div class="form-group">
+    <label for="voterPhone">Votre numéro de téléphone :</label>
+    <input type="tel" id="voterPhone" placeholder="ex: +2250700000000" required />
+  </div>
+
+  <!-- Conteneur reCAPTCHA (Obligatoire pour Firebase Phone) -->
+  <div id="recaptcha-container"></div>
+
+  <!-- Bouton pour envoyer le SMS -->
+  <button type="button" id="sendSmsBtn" class="button button-orange" style="width:100%; margin-top:10px;">
+    Recevoir le code par SMS
+  </button>
+
+  <!-- Zone de saisie du code SMS (Masquée au début) -->
+  <div id="otpSection" style="display:none; margin-top:20px;">
+    <div class="form-group">
+      <label for="smsCode">Code reçu par SMS :</label>
+      <input type="text" id="smsCode" placeholder="Code à 6 chiffres" maxlength="6" />
+    </div>
 
       <div class="form-group">
         <label for="candidateSelect">Choisissez votre candidat :</label>
