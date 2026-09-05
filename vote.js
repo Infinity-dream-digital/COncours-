@@ -96,6 +96,16 @@ document.getElementById('sendSmsBtn')?.addEventListener('click', async () => {
   }
 });
 
+// Si l'utilisateur tape 0701020304, on rajoute +225 automatiquement
+let phoneNumber = document.getElementById('voterPhone').value.trim();
+
+// Supprime les espaces ou tirets éventuels
+phoneNumber = phoneNumber.replace(/\s+/g, '');
+
+if (!phoneNumber.startsWith('+')) {
+  phoneNumber = '+225' + phoneNumber;
+}
+
 // 3. Soumission du vote après validation du code SMS
 document.getElementById('voteForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
