@@ -128,10 +128,14 @@ if (voteForm) {
       });
 
       // Mettre le marqueur dans le navigateur
+      // Enregistrement de la marque en local
       localStorage.setItem('has_voted_smallboost2026', 'true');
 
+      // Message de confirmation
       alert("Votre vote a été validé avec succès ! Merci de votre participation.");
-      voteForm.reset();
+
+      // Redirection automatique vers la page d'accueil
+      window.location.href = "index.html";
 
     } catch (err) {
       console.error("Erreur lors du vote :", err);
