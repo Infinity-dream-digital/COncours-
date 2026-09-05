@@ -21,11 +21,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const seedCandidates = [
-  { name:'Amina Koné', initials:'AK', short_description:'Une solution simple pour rendre le soutien scolaire accessible à chaque enfant.', full_project:'Amina développe une plateforme mobile de tutorat communautaire qui connecte des étudiants volontaires avec des enfants ayant besoin de se faire accompagner. Son projet combine contenus courts, suivi personnalisé et entraide locale.', photo_url:'' },
-  { name:'Koffi NGuessan', initials:'KN', short_description:'Transformer les déchets plastiques en objets utiles, beaux et durables.', full_project:'Koffi transforme les déchets plastiques collectés dans les quartiers en mobilier et objets du quotidien. Avec son atelier-école, il veut créer des emplois verts tout en sensibilisant les jeunes à l économie circulaire.', photo_url:'' },
-  { name:'Mariam Traoré', initials:'MT', short_description:'Donner une voix aux jeunes talents créatifs de nos quartiers.', full_project:'Mariam crée une scène itinérante qui repère, accompagne et met en lumière les jeunes talents artistiques. Son projet propose des ateliers, des résidences et des showcases gratuits dans plusieurs communes.', photo_url:'' }
-];
 
 let candidates = [];
 let votes = [];
