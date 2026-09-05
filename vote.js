@@ -9,12 +9,6 @@ import {
   serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
-import { 
-  getAuth, 
-  RecaptchaVerifier, 
-  signInWithPhoneNumber 
-} from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-
 const firebaseConfig = {
   apiKey: "AIzaSyAjbVjLLEWQyJFkXG-g67q3zQfee69Wo-I",
   authDomain: "concours-13ebb.firebaseapp.com",
@@ -26,16 +20,35 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const auth = getAuth(app);
 
-let confirmationResultGlobal = null;
+// 1. Générer une empreinte unique du téléphone / appareil
+function getDeviceFingerprint() {
+  const nav = window.navigator;
+  const screen = window.screen;
+  const rawString = `${nav.userAgent}-${screen.width}x${screen.height}-${nav.language}`;
+  
+  let hash = 0;
+  for (let i = 0; i < rawString.length; i++) {
+    const char = rawString.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  return 'fp_' + Math.abs(hash);
+}
 
-// Initialisation du reCAPTCHA invisible pour Firebase
-window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-  'size': 'invisible'
-});
+// 2. Récupérer l'adresse IP publique du votant
+async function getUserIP() {
+  try {
+    const res = await fetch('https://api.ipify.org?format=json');
+    const data = await res.json();
+    return data.ip;
+  } catch (e) {
+    console.warn("Impossible de récupérer l'IP :", e);
+    return "IP_UNKNOWN";
+  }
+}
 
-// 1. Charger les candidats
+// 3. Charger les candidats
 async function loadCandidatesSelect() {
   const selectEl = document.getElementById('candidateSelect');
   if (!selectEl) return;
@@ -57,96 +70,74 @@ async function loadCandidatesSelect() {
   }
 }
 
-// 2. Action du bouton : Envoyer le code SMS
-document.getElementById('sendSmsBtn')?.addEventListener('click', async () => {
-  let phoneNumber = document.getElementById('voterPhone')?.value?.trim();
+// 4. Traitement du vote
+const voteForm = document.getElementById('voteForm');
 
-  if (!phoneNumber) {
-    alert("Veuillez entrer votre numéro de téléphone.");
-    return;
-  }
+if (voteForm) {
+  voteForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
 
-  // Formatage automatique pour la Côte d'Ivoire si l'indicatif +225 n'est pas saisi
-  if (!phoneNumber.startsWith('+')) {
-    phoneNumber = '+225' + phoneNumber;
-  }
+    const errorEl = document.getElementById('voteError');
+    if (errorEl) errorEl.textContent = "";
 
-  try {
-    // A. Vérifier si ce numéro a DÉJÀ voté
-    const existingVotes = await getDocs(
-      query(collection(db, 'votes'), where('voter_phone', '==', phoneNumber))
-    );
+    const voterName = document.getElementById('voterName')?.value?.trim();
+    const candidateId = document.getElementById('candidateSelect')?.value;
 
-    if (!existingVotes.empty) {
-      alert('Ce numéro de téléphone a déjà été utilisé pour voter !');
+    if (!voterName || !candidateId) {
+      alert("Veuillez remplir tous les champs.");
       return;
     }
 
-    // B. Envoi du SMS via Firebase
-    const appVerifier = window.recaptchaVerifier;
-    confirmationResultGlobal = await signInWithPhoneNumber(auth, phoneNumber, appVerifier);
+    // VERROU 1 : Cache local du navigateur (blocage instantané)
+    if (localStorage.getItem('has_voted_smallboost2026')) {
+      alert("Cet appareil a déjà été utilisé pour enregistrer un vote.");
+      return;
+    }
 
-    alert("Un code à 6 chiffres vient de vous être envoyé par SMS.");
-    document.getElementById('otpSection').style.display = 'block';
-    document.getElementById('sendSmsBtn').style.display = 'none';
+    try {
+      const userIp = await getUserIP();
+      const deviceFp = getDeviceFingerprint();
 
-  } catch (error) {
-    console.error("Erreur SMS :", error);
-    alert("Impossible d'envoyer le SMS : " + error.message);
-  }
-});
+      // VERROU 2 : Vérification de l'ADRESSE IP dans Firestore
+      if (userIp !== "IP_UNKNOWN") {
+        const ipQuery = await getDocs(
+          query(collection(db, 'votes'), where('voter_ip', '==', userIp))
+        );
+        if (!ipQuery.empty) {
+          alert("Un vote a déjà été enregistré depuis cet appareil ou cette connexion Wi-Fi !");
+          return;
+        }
+      }
 
-// Si l'utilisateur tape 0701020304, on rajoute +225 automatiquement
-let phoneNumber = document.getElementById('voterPhone').value.trim();
+      // VERROU 3 : Vérification de l'EMPREINTE D'APPAREIL dans Firestore
+      const fpQuery = await getDocs(
+        query(collection(db, 'votes'), where('device_fp', '==', deviceFp))
+      );
+      if (!fpQuery.empty) {
+        alert("Cet appareil a déjà servi à voter.");
+        return;
+      }
 
-// Supprime les espaces ou tirets éventuels
-phoneNumber = phoneNumber.replace(/\s+/g, '');
+      // Enregistrement du vote dans Firestore
+      await addDoc(collection(db, 'votes'), {
+        candidate_id: candidateId,
+        voter_name: voterName,
+        voter_ip: userIp,
+        device_fp: deviceFp,
+        created_at: serverTimestamp()
+      });
 
-if (!phoneNumber.startsWith('+')) {
-  phoneNumber = '+225' + phoneNumber;
+      // Mettre le marqueur dans le navigateur
+      localStorage.setItem('has_voted_smallboost2026', 'true');
+
+      alert("Votre vote a été validé avec succès ! Merci de votre participation.");
+      voteForm.reset();
+
+    } catch (err) {
+      console.error("Erreur lors du vote :", err);
+      if (errorEl) errorEl.textContent = "Erreur lors de l'enregistrement : " + err.message;
+    }
+  });
 }
-
-// 3. Soumission du vote après validation du code SMS
-document.getElementById('voteForm')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-
-  const smsCode = document.getElementById('smsCode')?.value?.trim();
-  const selectedCandidateId = document.getElementById('candidateSelect')?.value;
-  let phoneNumber = document.getElementById('voterPhone')?.value?.trim();
-
-  if (!phoneNumber.startsWith('+')) {
-    phoneNumber = '+225' + phoneNumber;
-  }
-
-  if (!smsCode || smsCode.length < 6) {
-    alert("Veuillez saisir le code à 6 chiffres reçu par SMS.");
-    return;
-  }
-
-  if (!selectedCandidateId) {
-    alert("Veuillez sélectionner un candidat.");
-    return;
-  }
-
-  try {
-    // A. Vérification du code SMS auprès de Firebase
-    const userCredential = await confirmationResultGlobal.confirm(smsCode);
-
-    // B. Enregistrement du vote dans Firestore
-    await addDoc(collection(db, 'votes'), {
-      candidate_id: selectedCandidateId,
-      voter_phone: phoneNumber,
-      voter_uid: userCredential.user.uid,
-      created_at: serverTimestamp()
-    });
-
-    alert('Votre vote a été validé avec succès !');
-    location.reload();
-
-  } catch (error) {
-    console.error("Erreur de validation du vote :", error);
-    alert("Code SMS incorrect ou expiré. Veuillez réessayez.");
-  }
-});
 
 loadCandidatesSelect();
